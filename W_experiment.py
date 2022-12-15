@@ -6,6 +6,8 @@ from scipy.optimize import minimize
 import time
 import csv
 
+c_a = stats.chi2.ppf(q = 1 - 0.05,df = 1)
+
 #M = experiment size
 #lambda = mean of  distribution
 #returns an array of random samples following a gaussian distribution
@@ -27,36 +29,37 @@ def max_likelihood_est(samples,min_x,max_x,min_y,max_y,n_points,x,y):
         Z += cauchyPDF([sample,X,Y])
     min_nll = np.min(Z) #get min NLL value
     (row,col) = np.where(Z == min_nll) #get loc of min NLL value
-    assert(Z[row[0]][col[0]] == min_nll)
+    # assert(Z[row[0]][col[0]] == min_nll)
     best_mu = convert_index_to_val(col[0],min_x,max_x,n_points)
-    best_std = convert_index_to_val(row[0],min_y,max_y,n_points)
+    best_scale = convert_index_to_val(row[0],min_y,max_y,n_points)
     best_mu_loc = col[0]
-    best_std_loc = row[0]
-    # print("best mu ",best_mu)
+    best_scale_loc = row[0]
+    print("best mu ",best_mu)
     # print("best std ",best_std)
     # print("best mu and std ",best_mu," ", best_std)
     # print("smallest - nll ",min_nll)
-    plt.contour(X, Y, Z, colors='black')
-    plt.xlabel("mean")
-    plt.ylabel("scale")
-    plt.title("Contour of fixed NLL")
-    plt.show()
-    return (best_mu,best_std,Z,min_nll,best_mu_loc,best_std_loc)
+    # plt.contour(X, Y, Z, colors='black')
+    # plt.xlabel("mean")
+    # plt.ylabel("scale")
+    # plt.title("Contour of fixed NLL")
+    # plt.show()
+    return (best_mu,best_scale,Z,min_nll,best_mu_loc,best_scale_loc)
 
 def profile_likelihood(Z,min_nll,x):
+    #converts 2d nll over mu and scale to 1d delta_nll over just mu
     Z = np.transpose(Z)
     profile_ll = [np.min(row) - min_nll for row in Z]
-    plt.scatter(x,profile_ll)
-    plt.xlabel("mean")
-    plt.ylabel(r'$\Delta Min NLL$')
-    plt.title("1D Likelihood")
-    plt.show()
+    # plt.scatter(x,profile_ll)
+    # plt.xlabel("mean")
+    # plt.ylabel(r'$\Delta Min NLL$')
+    # plt.title("1D Likelihood")
+    # plt.show()
     return (Z,profile_ll,np.max(profile_ll))
 
 def conf_int(pll,min_x,max_x,n_points,best_mu,best_mu_loc):
     profile_ll = np.array(pll) #convert 1d profile likelihood array to np
 
-    delta_nll = 2.0 #2 sigma significance
+    delta_nll = c_a / 2.0 #2 sigma significance
     # min_loc = np.where(profile_ll == 0.0)
     # print("min loc ",min_loc[0][0])
     # print(convert_index_to_val(min_loc[0][0],min_x,max_x,n_points))
@@ -108,7 +111,7 @@ def cauchyPDF(params):
 
 def likelihood_ratio(Z,best_mu,best_std,min_x,max_x,min_y,max_y,n_points,best_mu_loc,best_std_loc,min_nll):
     #likelihood of observing data given the true mean and std
-    L_null = Z[50][50]
+    L_null = Z[(n_points - 1)/2][(n_points - 1)/2]
     # assert(convert_index_to_val(50,-0.5,0.5,101) == 0.0)
     #likelihood of observing data given MLE for mean and std
     L_mle = Z[best_mu_loc][best_std_loc]
@@ -117,7 +120,7 @@ def likelihood_ratio(Z,best_mu,best_std,min_x,max_x,min_y,max_y,n_points,best_mu
     #divide and take -2 ln
     modified_ratio = (2 * L_null) - (2 * L_mle)
     #value of chi2 at a significance level of 0.05 assuming 1 dof
-    c_a = stats.chi2.ppf(q = 1 - 0.05,df = 1)
+    # c_a = stats.chi2.ppf(q = 1 - 0.05,df = 1)
     #for a 95% confidence level, determine the value of the likelihood test above which we should not reject null
     #value of likelihood below which we should reject null hypothesis
     if modified_ratio > c_a:
@@ -129,19 +132,20 @@ def experiment(M):
     random_samples = Inverse_transform_sampling(M,lambda_ = 0)
     # print(random_samples)
     # analytic_max_likelihood_est(random_samples)
-    min_x = -0.5
-    max_x = 0.5
-    min_y = 0.5
-    max_y = 1.5
+    min_x = -0.05
+    max_x = 0.05
+    min_y = 0.95
+    max_y = 1.05
     n_points = 101
     x = np.linspace(min_x,max_x,n_points) #mean centered at 0
     y = np.linspace(min_y,max_y,n_points) #std centered at 1
     (best_mu,best_std,Z,min_nll,best_mu_loc,best_std_loc) = max_likelihood_est(random_samples,min_x,max_x,min_y,max_y,n_points,x,y)
     (transposed_Z,profile_ll,max_ll) = profile_likelihood(Z,min_nll,x)
     (low_bound, up_bound) = conf_int(profile_ll,min_x,max_x,n_points,best_mu,best_mu_loc)
-    # print("low bound ",low_bound)
-    # print("up bound ",up_bound)
-    plot_estimators(x,profile_ll,n_points,best_mu,max_ll,low_bound,up_bound)
+    # print("best mu ", best_mu)
+    print("low bound ",low_bound)
+    print("up bound ",up_bound)
+    # plot_estimators(x,profile_ll,n_points,best_mu,max_ll,low_bound,up_bound)
     within_CI = 0
     if low_bound <= 0.0 <= up_bound:
         within_CI = 1
@@ -178,6 +182,17 @@ def plot_estimators(x,profile_ll,n_points,best_mu,max_ll,low_bound,up_bound):
     plt.title("1D Likelihood")
     plt.legend()
     plt.show()
+    # #zoom in
+    # plt.scatter(x,profile_ll)
+    # plt.plot(mle_x_vals,y_vals,color="red",label="MLE")
+    # plt.plot(truemean_x_vals,y_vals,'--',color="pink",label="True Mean")
+    # plt.plot(low_bound_x,y_vals,color="blue",linewidth=2,label="Lower bound of confidence interval")
+    # plt.plot(up_bound_x,y_vals,color="blue",linewidth=2,label="Upper bound of confidence interval")
+    # plt.xlim(-0.1,0.1)
+    # plt.ylim(0,1000)
+    # plt.show()
+
+
 
 def plot_overall():
     with open("experiment_results.csv", 'r') as file:
@@ -194,13 +209,13 @@ def plot_overall():
         width = 0.35
         fig,ax = plt.subplots()
         rects1 = ax.bar(x - width/2, hypothesis_test,width,label = "hypothesis test",color="blue")
-        rects2 = ax.bar(x + width/2, within_ci,width,label = "confidence interval test",color="orange")
+        rects2 = ax.bar(x + width/2, within_ci,width,label = "coverage test",color="orange")
         ax.set_xlabel('Data points per experiment group')
         ax.set_title('Rates of tests passed by experiment group')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.set_ylabel('Runs/Total Runs')
-        ax.legend()
+        ax.legend(loc="center right")
         ax.bar_label(rects1, padding=3)
         ax.bar_label(rects2, padding=3)
         plt.show()
@@ -210,7 +225,7 @@ total_experiments = 1
 # for i in range(3,7):
 for i in range(1):
     # M = 10**i
-    M = 1000
+    M = 1000000
     rejections = 0.0
     times_within_CI = 0.0
     t0 = time.time()
@@ -219,11 +234,11 @@ for i in range(1):
         rejections += reject_null
         times_within_CI += within_CI
     t1 = time.time() - t0
-    print(rejections/total_experiments)
-    print(times_within_CI/total_experiments)
-    print("time in seconds ",t1," time in min ",t1/60)
+    # print(rejections/total_experiments)
+    # print(times_within_CI/total_experiments)
+    # print("time in seconds ",t1," time in min ",t1/60)
     row = [M,total_experiments,rejections/total_experiments,times_within_CI/total_experiments,t1,t1/60]
     with open("experiment_results.csv", 'a') as file:
         writer = csv.writer(file)
         writer.writerow(row)
-    plot_overall()
+# plot_overall()
