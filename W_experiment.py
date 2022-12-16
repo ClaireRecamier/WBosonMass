@@ -6,11 +6,11 @@ from scipy.optimize import minimize
 import time
 import csv
 
+#chi squared value corresponding to 95% confidence level for 1 dof
 c_a = stats.chi2.ppf(q = 1 - 0.05,df = 1)
 
-#M = experiment size
-#lambda = mean of  distribution
-#returns an array of random samples following a gaussian distribution
+#M = experiment size, lambda = mean of  distribution
+#returns an array of random samples following a cauchy distribution
 def Inverse_transform_sampling(M,lambda_):
     samples = []
 
@@ -23,21 +23,17 @@ def Inverse_transform_sampling(M,lambda_):
 
 #returns mean value of distribution at which likelihood is maximized
 def max_likelihood_est(samples,min_x,max_x,min_y,max_y,n_points,x,y):
-    X, Y = np.meshgrid(x, y)
+    X, Y = np.meshgrid(x, y) #create grid of parameter space
     Z = 0.0
     for sample in samples: # sum the NLL of each data point in sample
         Z += cauchyPDF([sample,X,Y])
     min_nll = np.min(Z) #get min NLL value
     (row,col) = np.where(Z == min_nll) #get loc of min NLL value
     # assert(Z[row[0]][col[0]] == min_nll)
-    best_mu = convert_index_to_val(col[0],min_x,max_x,n_points)
+    best_mu = convert_index_to_val(col[0],min_x,max_x,n_points) #get value corresponding to location of best_mu
     best_scale = convert_index_to_val(row[0],min_y,max_y,n_points)
     best_mu_loc = col[0]
     best_scale_loc = row[0]
-    print("best mu ",best_mu)
-    # print("best std ",best_std)
-    # print("best mu and std ",best_mu," ", best_std)
-    # print("smallest - nll ",min_nll)
     # plt.contour(X, Y, Z, colors='black')
     # plt.xlabel("mean")
     # plt.ylabel("scale")
@@ -68,18 +64,27 @@ def conf_int(pll,min_x,max_x,n_points,best_mu,best_mu_loc):
     diff_array = np.absolute(profile_ll - delta_nll)
 
     #find index in left,righthalf of diff_array of value closest to 0
-    low_bound = diff_array[0:best_mu_loc].argmin()
-    up_bound = diff_array[best_mu_loc+1:n_points].argmin()
+    try:
+        #if the mle is already at the min value searchable in parameter space, and the array is empty
+        low_bound = diff_array[0:best_mu_loc].argmin()
+    except ValueError:
+        low_bound = 0
+    try:
+        #if the mle is at the max value searchable in param space, and the array is empty
+        up_bound = diff_array[best_mu_loc+1:n_points].argmin()
+    except ValueError:
+        up_bound = n_points - 1
     up_bound = best_mu_loc + 1 + up_bound #shift up_bound by adding center of array
     low_bound = convert_index_to_val(low_bound,min_x,max_x,n_points)
     up_bound = convert_index_to_val(up_bound,min_x,max_x,n_points)
     # print("low and up bound of conf int ",low_bound," ",up_bound)
     return(low_bound,up_bound)
 
-#for each mu sigma pair,loop thru data points
-#calculate -Nll at each point and add all NLLs for each point together
-#result is a -Nll for each mu and sigma pair
+#not in use, used to check
 def analytic_max_likelihood_est(samples):
+    #for each mu sigma pair,loop thru data points
+    #calculate -Nll at each point and add all NLLs for each point together
+    #result is a -Nll for each mu and sigma pair
     NLLS = {}
     #for one mu and sigma pair
     for i in range(0,51):
@@ -98,25 +103,24 @@ def analytic_max_likelihood_est(samples):
     return NLLS
 
 def convert_index_to_val(index,min,max,n_points):
+    #converts the index into param space array to value of correponding param
     # print("convert call ",index," ",min," ",max," ",n_points)
     return min + index * (max-min)/(n_points - 1)
 
 def cauchyPDF(params):
-    # x,y,z = params
-    # return x**2 + y**3 + z**3
     x,loc,scale = params
     # print(params)
     # return -1 * np.log((1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5*((x-mu)/std)**2))
     return -1 * np.log(1/((np.pi * scale)*(1 + ((x - loc)/scale)**2)))
 
 def likelihood_ratio(Z,best_mu,best_std,min_x,max_x,min_y,max_y,n_points,best_mu_loc,best_std_loc,min_nll):
-    #likelihood of observing data given the true mean and std
-    L_null = Z[(n_points - 1)/2][(n_points - 1)/2]
+    #likelihood of true mean and std
+    L_null = Z[50][50]
     # assert(convert_index_to_val(50,-0.5,0.5,101) == 0.0)
-    #likelihood of observing data given MLE for mean and std
+    #likelihood of  MLE for mean and std
     L_mle = Z[best_mu_loc][best_std_loc]
     # assert(L_mle == min_nll)
-    # print("here ",Z[best_mu][best_std])
+    # print("L_null ",L_null, " L_mle ",L_mle)
     #divide and take -2 ln
     modified_ratio = (2 * L_null) - (2 * L_mle)
     #value of chi2 at a significance level of 0.05 assuming 1 dof
@@ -132,10 +136,10 @@ def experiment(M):
     random_samples = Inverse_transform_sampling(M,lambda_ = 0)
     # print(random_samples)
     # analytic_max_likelihood_est(random_samples)
-    min_x = -0.05
-    max_x = 0.05
-    min_y = 0.95
-    max_y = 1.05
+    min_x = -0.25
+    max_x = 0.25
+    min_y = 0.75
+    max_y = 1.25
     n_points = 101
     x = np.linspace(min_x,max_x,n_points) #mean centered at 0
     y = np.linspace(min_y,max_y,n_points) #std centered at 1
@@ -143,8 +147,8 @@ def experiment(M):
     (transposed_Z,profile_ll,max_ll) = profile_likelihood(Z,min_nll,x)
     (low_bound, up_bound) = conf_int(profile_ll,min_x,max_x,n_points,best_mu,best_mu_loc)
     # print("best mu ", best_mu)
-    print("low bound ",low_bound)
-    print("up bound ",up_bound)
+    # print("low bound ",low_bound)
+    # print("up bound ",up_bound)
     # plot_estimators(x,profile_ll,n_points,best_mu,max_ll,low_bound,up_bound)
     within_CI = 0
     if low_bound <= 0.0 <= up_bound:
@@ -220,12 +224,12 @@ def plot_overall():
         ax.bar_label(rects2, padding=3)
         plt.show()
 
-# total_experiments = 500
-total_experiments = 1
-# for i in range(3,7):
-for i in range(1):
-    # M = 10**i
-    M = 1000000
+total_experiments = 500
+# total_experiments = 0
+for i in range(3,7):
+# for i in range(0):
+    M = 10**i
+    # M = 1000000
     rejections = 0.0
     times_within_CI = 0.0
     t0 = time.time()
@@ -241,4 +245,4 @@ for i in range(1):
     with open("experiment_results.csv", 'a') as file:
         writer = csv.writer(file)
         writer.writerow(row)
-# plot_overall()
+plot_overall()
